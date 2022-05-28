@@ -1,5 +1,9 @@
 export default {
-    testEnvironment: 'jest-environment-node',
+    transform: {
+        "^.+\\.[t|j]sx?$": "babel-jest"
+    },
     collectCoverage: true,
-    transform: {}
+    transformIgnorePatterns: [
+        "<rootDir>/node_modules/(?!lodash-es)"
+    ]
 };

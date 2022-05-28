@@ -33,6 +33,7 @@ describe(`JStore - Create Read Update Delete document`, () => {
 
     test(`DELETE a document`, async() => {
         await store.remove('key3');
+        console.log(`deleted key 3 ${Date.now()}`);
         clearCache();
         const file = await store.get('key3');
         expect(file.exists).toBeFalsy();

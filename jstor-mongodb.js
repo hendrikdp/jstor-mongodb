@@ -1,4 +1,5 @@
 import { MongoClient} from "mongodb";
+let mongoConnectionCache = null;
 
 export default function(options = {}){
 
@@ -11,8 +12,6 @@ export default function(options = {}){
     if(!options.dbName) options.dbName = 'jstor'
     if(!options.collection) options.collection = 'jstorCollection';
     if(!options.keyAttribute) options.keyAttribute = '_id';
-
-    const mongo = new MongoClient(options.url);
 
     return function(store){
 
@@ -27,12 +26,18 @@ export default function(options = {}){
             }
         };
         store.setOptions(Object.assign(defaultStoreOptions, options));
+        if(!mongoConnectionCache) mongoConnectionCache = new store.Cache();
+        store.client = mongoConnectionCache.getKey(options.url);
+        if(!store.client){
+            store.client = new MongoClient(options.url);
+            mongoConnectionCache.setKey(options.url, store.client);
+        }
 
         let mongoConnectionState;
         async function getMongoCollection(){
             return mongoConnectionState ||
                 (
-                    mongoConnectionState = mongo
+                    mongoConnectionState = store.client
                         .connect()
                         .then(client => client.db(options.dbName))
                         .then(db => db.collection(options.collection))
@@ -45,7 +50,7 @@ export default function(options = {}){
             } : {}
         }
 
-        return {
+        const exports = {
 
             async get(key){
                 const collection = await getMongoCollection();
@@ -71,40 +76,45 @@ export default function(options = {}){
                 const collection = await getMongoCollection();
                 const searchDoc = getSearchDocument();
                 const projection = {[options.keyAttribute]:1};
-                const keys = await collection.find(searchDoc, {projection}).toArray();
+                const keys = await collection
+                    .find(searchDoc, {projection})
+                    .toArray();
                 return Array.isArray(keys) ?
                     keys.map(key => key[options.keyAttribute]) :
                     [];
             },
 
-            async all(start, n, reverse){
-                //if this function does not exist, jstor will use the keys()/batch() call!
-                //make sure to return the objects in this format:
-                //[{key, document}]
-            },
-
-            async batch(ids){
-                //if this function does not exist, jstor will fetch document by document!
-                //make sure to return the objects in this format:
-                //[{key, document}]
-            },
-
             //query will be database type specific
-            async find(query){
+            async find(query, start, n){
                 const collection = await getMongoCollection();
-                const docs = await collection.find(query).toArray();
+                const docs = await collection
+                    .find(query)
+                    .skip(start || 0)
+                    .limit(n || 10000)
+                    .toArray();
                 return Array.isArray(docs) ?
                     docs.map(document => ({key: document[options.keyAttribute], document: document})) :
                     []
             },
 
+            async batch(ids){
+                const query = {
+                    [options.keyAttribute]: {'$in': ids}
+                };
+                return exports.find(query);
+            },
+
             async findOne(query){
-                //make sure to return the objects in this format:
-                //{key, document}
+                const collection = await getMongoCollection();
+                const document = await collection.findOne(query);
+                return document ?
+                    {key: document[options.keyAttribute], document: document} :
+                    null;
             }
 
         };
 
+       return exports;
     }
 
 }
